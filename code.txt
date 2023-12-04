@@ -1,0 +1,299 @@
+set SERVEROUTPUT on;
+
+--1. Sa se determine nr de parteneriate pentru angajatul al carui id se introduce de la tastatura 
+declare
+    v_nr number;
+    v_id number;
+begin
+    select count(id_parteneriat1),id_angajat1 into v_nr ,v_id--se incarca o singura valoare in variabilele scalare
+    from parteneriat1
+    where id_angajat1=&id_angajat1
+    group by id_angajat1;
+    dbms_output.put_line('Nr parteneriate pentru angajatul cu id '||v_id ||': '||v_nr);
+end;
+
+
+--2. Cu ocazia sarbatorilor, preturile se vor reduce astfel:
+-- pentru preturile mai mici de 500 => o reducere de 5%
+-- pentru cele intre 500 si 2500 => o reducere de 15%
+-- pentru cele peste 2500=> o reducere de 30%
+
+DECLARE 
+v_pret lista_preturi1.pret%TYPE;
+v_min NUMBER;
+v_max NUMBER;
+BEGIN
+SELECT MIN(id_pret1), MAX(id_pret1)
+INTO v_min, v_max
+FROM lista_preturi1;
+WHILE v_min <= v_max LOOP
+SELECT pret INTO v_pret 
+FROM lista_preturi1 
+WHERE id_pret1 = v_min;
+CASE
+WHEN v_pret <500 THEN  v_pret:=v_pret*0.95;
+WHEN v_pret BETWEEN 500 AND 2500 THEN v_pret:=v_pret*0.85;
+ELSE  v_pret:=v_pret*0.7;
+END CASE;
+DBMS_OUTPUT.PUT_LINE ('Pretul cu id '|| v_min || ' va avea pretul  '|| v_pret);
+  v_min:= v_min+1;
+    END LOOP;   
+END;
+
+-- 3.	Dat fiind id-ul unui angajat de la tastatura, sa se afiseze daca acesta este angajat primavara sau nu.
+
+DECLARE
+v_nume angajat1.nume%TYPE;
+v_prenume angajat1.prenume%TYPE;
+v_data DATE;
+v_c angajat1.id_angajat1%TYPE:= &c;
+
+BEGIN
+SELECT nume, prenume, data_angajare 
+INTO v_nume, v_prenume, v_data
+FROM angajat1
+WHERE id_angajat1= v_c;
+IF (extract(month from v_data) BETWEEN 3  AND 5) 
+THEN  DBMS_OUTPUT.PUT_LINE ('Angajatul '||v_nume||' '|| v_prenume || ' a fost angajat primavara.');
+ELSE DBMS_OUTPUT.PUT_LINE ('Angajatul '||v_nume||' '|| v_prenume || ' nu a fost angajat primavara.');
+END IF;
+END;
+
+--4.	Sa se afiseze preturile din lista mai mari decat 2500 lei, folosind structura repetitiva FOR.
+
+DECLARE
+    v_pret NUMBER;
+    v_min NUMBER;
+    v_max NUMBER;
+BEGIN
+SELECT MIN(id_pret1), MAX(id_pret1)
+INTO v_min, v_max
+FROM lista_preturi1;
+
+    FOR i IN v_min..v_max LOOP
+        SELECT pret
+        INTO v_pret
+        FROM lista_preturi1
+        WHERE id_pret1=i;
+        IF( v_pret > 2500 ) THEN
+    DBMS_OUTPUT.PUT_LINE ('Pretul '||i|| ' este - '||v_pret);
+    END IF;
+    END LOOP;
+END;
+
+
+--1. Sa se afiseze primele 5 preturi, ordonate descrescator. 
+declare 
+    cursor c is select id_pret1,pret from lista_preturi1 order by pret desc;
+    v_pret_row c%rowtype;
+begin
+    open c;
+    
+    loop
+         fetch c into v_pret_row;
+    exit when c%rowcount=6;
+    dbms_output.put_line('id '||v_pret_row.id_pret1|| ' = '||v_pret_row.pret);
+    end loop;
+    close c;
+end;
+/
+
+
+-- 2.	Sa se modifice locatiile din strainatate din tabela locatie1 ca fiind 'EXTERN'.
+-- -	Se trateaza cazul in care nu exista nicio locatie.
+
+begin
+for v_loc in (select id_locatie1, locatie,zona from locatie1 where zona='strainatate')
+loop
+update locatie1 set locatie = 'EXTERN'
+where id_locatie1=v_loc.id_locatie1;
+dbms_output.put_line('Locatia '|| v_loc.locatie || ' are locatia modificata.');
+end loop;
+exception
+when no_data_found then dbms_output.put_line('Nu exista nicio astfel de locatie.');
+end;
+
+rollback; -- pentru a nu pastra modificarile
+select * from parteneriat1;
+
+-- 3.	Sa se afiseze parteneriatele din anul dat de la tastatura, cu un cursor explicit si sa se trateze cazul in care nu exista.
+
+declare 
+cursor c_parteneriat is select id_parteneriat1, data from parteneriat1;
+begin 
+for i in c_parteneriat loop
+if (extract(year from i.data) = &data ) then 
+dbms_output.put_line(i.id_parteneriat1|| ' ' || i.data);
+end if; 
+end loop;
+exception
+when NO_DATA_FOUND then
+dbms_output.put_line('Nu exista parteneriat in acest an!');
+end;
+
+
+-- 4. Sa se construiasca un bloc PLSQL prin care sa se afiseze pentru fiecare elev: numele complet, cnp, si datele parintelui.
+declare
+    cursor c is select nume||prenume as nume_complet, cnp, telefon_parinte, mail_parinte from elev1;
+begin
+    for v_compusa in c
+    loop
+    exit when c%notfound;
+    dbms_output.put_line(v_compusa.nume_complet||' '||v_compusa.cnp||' '||v_compusa.telefon_parinte||' '||v_compusa.mail_parinte);
+    end loop;
+end;
+/
+
+
+select * from lista_preturi1;
+select * from angajat1;
+select * from locatie1;
+
+-- 1.	Sa se genereze o functie care afiseaza suma preturilor pentru locatiile cu id-ul introdus de la tastatura.
+--	Sa se trateze cazul in care nu exista pret pentru locatia cu id ul precizat.
+
+create or replace function pret_total
+(p_id in number)
+return number
+is
+cursor c is select SUM(pret) from lista_preturi1 where id_locatie1=p_id;
+v_pret NUMBER;
+begin 
+open c;
+fetch c into v_pret;
+close c;
+RETURN v_pret;
+exception
+when NO_DATA_FOUND then RETURN 0;
+end;
+
+
+DECLARE
+    v_pret NUMBER;
+    v_id NUMBER:=&id;
+BEGIN
+    v_pret:= pret_total(v_id);
+       if v_pret =0 then  DBMS_OUTPUT.PUT_LINE('Nu exista pret pentru locatia ceruta.' );
+       else DBMS_OUTPUT.PUT_LINE('Pretul total pentru locatia '|| v_id || ' este '|| v_pret );
+       end if;
+END;
+
+
+ --2. Generati o functie care se calculeze numarul de ani impliniti de la data angajarii unui angajat al carui id este dat ca parametru de intrare. Tratati cazul ”n care angajatul indicat nu exista. 
+    create or replace function calcul_vechime(p_id in angajat1.id_angajat1%type)
+    return number
+    as
+        vechime number;
+    begin
+        select round((sysdate-data_angajare)/365,0) into vechime from angajat1 where id_angajat1=p_id;
+        return vechime;
+    exception
+        when no_data_found then return -1;
+    end;
+    /
+    execute dbms_output.put_line(calcul_vechime(3));
+
+
+-- 3.	Sa se construiasca functia care verifica daca o locatie este autohtona sau nu.
+
+create or replace function autohton
+(p_id IN number)
+RETURN boolean
+IS
+v_autohton locatie1.zona%type;
+begin 
+select zona into v_autohton from locatie1 where id_locatie1=p_id;
+if v_autohton = 'tara' then return true;
+else return false;
+end if;
+exception
+when no_data_found then return NULL;
+end;
+
+--apel 
+declare
+v_id number := &id;
+begin 
+if (autohton(v_id)) IS null then  dbms_output.put_line('Locatia nu exista!');
+elsif (autohton(v_id)) then dbms_output.put_line('Locatia este autohtona.');
+else dbms_output.put_line('Locatia nu este autohtona');
+end if;
+end;
+
+
+-- 1. Sa se creeze o procedura care sa insereze un elev.
+create or replace procedure adauga_elev
+(
+p_nume elev1.nume%type,
+p_prenume elev1.prenume%type,
+p_cnp elev1.cnp%type,
+p_tel elev1.telefon_parinte%type,
+p_email elev1.mail_parinte%type)
+IS
+p_id number := 11;
+begin 
+select max(id_elev1) into p_id from elev1;
+insert into elev1
+values (p_id+1, p_nume, p_prenume, p_cnp, p_tel, p_email);
+end;
+
+begin 
+adauga_elev('Anghel', 'Ion', '5010320300222', '0723356665', 'ang.marius@gmail.com');
+end;
+
+
+ --2. Sa se genereze o procedura de marire a preturilor prin care sa se mareasca cu o anumita valoare pretul din lista. Sa se trateze printr-o exceptie cazul ”n care nu exista pretul.
+    create or replace procedure marire_pret(x number, p_id number)
+    as
+        v_pret lista_preturi1.pret%TYPE;
+    begin
+         select pret into v_pret from lista_preturi1 where id_pret1=p_id; 
+        dbms_output.put_line('Pretul vechi, cu id '||p_id||' :' ||v_pret);
+        update lista_preturi1
+        set pret=pret+x
+        where id_pret1=p_id;
+    
+        select pret into v_pret from lista_preturi1 where id_pret1=p_id;
+        dbms_output.put_line('Pretul nou, cu id '||p_id||' ' ||v_pret);
+    exception 
+        when no_data_found then dbms_output.put_line('Pretul nu exista!');
+    end;
+    /
+    
+    execute marire_pret(1000,1);
+    
+-- 3. Sa se scrie o procedura care sa afiseze urmatorul id valabil pentru tabela angajati. Aceasta va fi utila la inserarea unei noi inregistrari.
+create or replace procedure next_id_ang
+IS
+p_id number;
+begin 
+select max(id_angajat1) into p_id from angajat1;
+p_id := p_id+1;
+dbms_output.put_line('Urmatorul id poate fi: '||p_id);
+end;
+ 
+begin 
+next_val();
+end;
+
+-- 4. Parintele unui elev si-a schimbat numarul de telefon.	Sa se scrie o procedura care modifica numarul de telefon al parintelui unui elev cu id primit ca parametru.
+
+create or replace procedure actualizare_telefon
+(p_id number, p_telefon elev1.telefon_parinte%type)
+is
+    v_tel elev1.telefon_parinte%type;
+    begin
+         select telefon_parinte into v_tel from elev1 where id_elev1=p_id; 
+        dbms_output.put_line('Telefonul vechi, al parintelui elevului cu id '||p_id||' :' ||v_tel);
+        update elev1
+        set telefon_parinte=p_telefon
+        where id_elev1=p_id;
+    
+        select telefon_parinte into v_tel from elev1 where id_elev1=p_id; 
+         dbms_output.put_line('Telefonul nou, al parintelui elevului cu id '||p_id||' :' ||v_tel);
+    exception 
+        when no_data_found then dbms_output.put_line('Elevul nu exista!');
+    end;
+    /
+    
+ execute actualizare_telefon(&id, '0799456333');
